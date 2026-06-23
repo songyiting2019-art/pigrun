@@ -295,8 +295,9 @@ function drawBoard() {
 }
 
 function drawPig(pig, time) {
-  const cx = board.x + (pig.px + 0.5) * board.cell;
-  const cy = board.y + (pig.py + 0.5) * board.cell;
+  const center = pigVisualCenter(pig);
+  const cx = board.x + (center.x + 0.5) * board.cell;
+  const cy = board.y + (center.y + 0.5) * board.cell;
   const moving = pig.exiting || pig.charge;
   const runWave = moving ? Math.sin(pig.runPhase || 0) : 0;
   const runStep = moving ? Math.abs(runWave) : 0;
@@ -318,8 +319,8 @@ function drawPig(pig, time) {
   const sprite = pig.dir === "up" ? pigSprites.up : pig.dir === "down" ? pigSprites.down : pigSprites.right;
   if (sprite.complete && sprite.naturalWidth > 0) {
     const side = pig.dir === "left" || pig.dir === "right";
-    const drawW = board.cell * (side ? 2.02 : 1.34);
-    const drawH = board.cell * (side ? 1.2 : 2.02);
+    const drawW = board.cell * (side ? 1.86 : 1.08);
+    const drawH = board.cell * (side ? 1.08 : 1.86);
     ctx.rotate(runWave * 0.035);
     ctx.scale((pig.dir === "left" ? -1 : 1) * (1 + runStep * 0.07), 1 - runStep * 0.055);
     ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
@@ -524,35 +525,42 @@ function pigAtPoint(clientX, clientY) {
     return b.pig.py - a.pig.py;
   });
 
-  const best = hits[0];
-  const runnerUp = hits[1];
-  if (runnerUp && runnerUp.score - best.score < 0.035) return null;
-  return best.pig;
+  return hits[0].pig;
 }
 
 function pigTouchScore(pig, point) {
-  const cx = board.x + (pig.px + 0.5) * board.cell;
-  const cy = board.y + (pig.py + 0.5) * board.cell;
+  const center = pigVisualCenter(pig);
+  const cx = board.x + (center.x + 0.5) * board.cell;
+  const cy = board.y + (center.y + 0.5) * board.cell;
   const dx = (point.x - cx) / board.cell;
   const dy = (point.y - cy) / board.cell;
-  const fingerRadius = Math.max(0.78, 30 / board.cell);
-  const centerScore = ellipseHitScore(dx, dy, 0, 0.02, fingerRadius, fingerRadius * 1.08);
+  const side = pig.dir === "left" || pig.dir === "right";
+  const visualHalfW = side ? 0.93 : 0.54;
+  const visualHalfH = side ? 0.54 : 0.93;
+  const fingerPadding = Math.max(0.08, 8 / board.cell);
 
-  if (pig.dir === "left" || pig.dir === "right") {
-    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.03, 1.03, 0.58));
-  }
-
-  if (pig.dir === "up") {
-    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.02, 0.6, 1.03));
-  }
-
-  return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.06, 0.62, 1.04));
+  return roundedRectHitScore(dx, dy, visualHalfW + fingerPadding, visualHalfH + fingerPadding);
 }
 
 function ellipseHitScore(dx, dy, cx, cy, rx, ry) {
   const nx = (dx - cx) / rx;
   const ny = (dy - cy) / ry;
   return nx * nx + ny * ny;
+}
+
+function roundedRectHitScore(dx, dy, halfW, halfH) {
+  const nx = Math.abs(dx) / halfW;
+  const ny = Math.abs(dy) / halfH;
+  return Math.max(nx, ny);
+}
+
+function pigVisualCenter(pig, x = pig.px, y = pig.py) {
+  const dir = dirs[pig.dir];
+  const offset = ((pigCollision.footprintLength || 1) - 1) / 2;
+  return {
+    x: x - dir.x * offset,
+    y: y - dir.y * offset,
+  };
 }
 
 function canExit(pig) {
@@ -566,17 +574,22 @@ function tracePath(pig) {
   while (true) {
     const nextX = x + dir.x;
     const nextY = y + dir.y;
-    const nextCells = pigFootprintCells(pig, nextX, nextY);
-    if (!nextCells.length) {
+    const frontCell = pigFrontCell(pig, nextX, nextY);
+    if (!isCellInside(frontCell.x, frontCell.y)) {
       return { canExit: true, stopX: x, stopY: y };
     }
-    const blocker = pigBlockingBodyAt(pig, nextX, nextY);
+    const blocker = pigBlockingBodyAt(pig, frontCell);
     if (blocker) {
       return { canExit: false, stopX: x, stopY: y, hitX: blocker.x, hitY: blocker.y };
     }
     x = nextX;
     y = nextY;
   }
+}
+
+function pigFrontCell(pig, x = pig.x, y = pig.y) {
+  const dir = dirs[pig.dir];
+  return { x, y };
 }
 
 function pigFootprintCells(pig, x = pig.x, y = pig.y, keepOutside = false) {
@@ -591,14 +604,15 @@ function pigFootprintCells(pig, x = pig.x, y = pig.y, keepOutside = false) {
   return cells;
 }
 
-function pigBlockingBodyAt(movingPig, x, y) {
-  const movingCells = pigFootprintCells(movingPig, x, y);
+function isCellInside(x, y) {
+  return x >= 0 && y >= 0 && x < board.cols && y < board.rows;
+}
+
+function pigBlockingBodyAt(movingPig, frontCell) {
   return state.pigs.find((pig) => {
     if (pig === movingPig || pig.exiting) return false;
     const cells = pigFootprintCells(pig);
-    return movingCells.some((movingCell) =>
-      cells.some((cell) => cell.x === movingCell.x && cell.y === movingCell.y),
-    );
+    return cells.some((cell) => cell.x === frontCell.x && cell.y === frontCell.y);
   });
 }
 
@@ -635,7 +649,8 @@ function getOffscreenTarget(pig) {
 }
 
 function makeDust(pig) {
-  makeDustAt(pig.px, pig.py, 10);
+  const center = pigVisualCenter(pig);
+  makeDustAt(center.x, center.y, 10);
 }
 
 function makeDustAt(gridX, gridY, count = 8) {
@@ -656,8 +671,9 @@ function makeDustAt(gridX, gridY, count = 8) {
 
 function makeRunDust(pig, count = 4) {
   const dir = dirs[pig.dir];
-  const cx = board.x + (pig.px + 0.5 - dir.x * 0.34) * board.cell;
-  const cy = board.y + (pig.py + 0.5 - dir.y * 0.34) * board.cell;
+  const center = pigVisualCenter(pig);
+  const cx = board.x + (center.x + 0.5 - dir.x * 0.74) * board.cell;
+  const cy = board.y + (center.y + 0.5 - dir.y * 0.74) * board.cell;
   for (let i = 0; i < count; i += 1) {
     addParticle({
       x: cx + (Math.random() - 0.5) * board.cell * 0.5,
