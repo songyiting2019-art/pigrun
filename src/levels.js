@@ -15,53 +15,68 @@ const DIRECTION_TO_CELL = {
   right: "r",
 };
 
+const DIRECTION_VECTORS = {
+  u: { x: 0, y: -1 },
+  d: { x: 0, y: 1 },
+  l: { x: -1, y: 0 },
+  r: { x: 1, y: 0 },
+};
+
+const FOOTPRINT_LENGTH = 2;
+
 const LEVELS = [
   {
     id: "level-1",
     name: "第 1 关",
     rows: [
-      "..ul....",
-      "u.uull.u",
-      "du.u.udu",
-      "luu.ru.u",
-      "d.ruu.du",
-      "d.dul...",
-      ".dd.r..r",
-      "ldl..dd.",
-      ".d.rddrd",
-      "ld.llrrr",
+      "ul..r..ru",
+      ".ul.u..r.",
+      "......r.r",
+      "dl.l.l...",
+      "...ru.r..",
+      ".u.r..rd.",
+      "d...r.r..",
+      ".....r.dd",
+      "d..l....r",
+      ".dl......",
+      "..l.d.rdd",
+      "l..l....r",
     ],
   },
   {
     id: "level-2",
     name: "第 2 关",
     rows: [
-      "uullulru",
-      ".uuuruur",
-      "dl.lu..d",
-      "dllrr.u.",
-      "d.l...rd",
-      "..ud.drd",
-      "d.ur..dd",
-      "dlud..rd",
-      "dldddrrr",
-      "l.ll..r.",
+      "..l...r.r",
+      "....ru.ru",
+      ".ddu..u..",
+      ".....r...",
+      "l.dl.u...",
+      "....r..r.",
+      ".d.l..rud",
+      "l.d...r..",
+      ".l.l.....",
+      "dl.l.l.dd",
+      "..l.l..r.",
+      "ddl.l..rd",
     ],
   },
   {
     id: "level-3",
     name: "第 3 关",
     rows: [
-      ".l.ur.rr",
-      ".urrr.u.",
-      "llulurr.",
-      ".uduuuru",
-      "lu.l.uru",
-      "uld..rrd",
-      "u.lll.rd",
-      "ddrr.ru.",
-      "dldlldrr",
-      "l.rrrrd.",
+      "....r.r.r",
+      "ul.uu.r..",
+      ".l......u",
+      "l.l.l..r.",
+      "..l...r.u",
+      "....l..r.",
+      ".d.d.....",
+      "...r.d.d.",
+      "d.r..rd..",
+      ".l.l....d",
+      "dl...r.r.",
+      "l..r...rd",
     ],
   },
 ];
@@ -92,6 +107,40 @@ function serializeLevelCells(cells, cols, rows) {
 function validateLevel(level) {
   const rows = Array.isArray(level) ? level : level.rows;
   const issues = [];
+  const occupied = new Map();
+  const rowCount = rows.length;
+  const colCount = Math.max(...rows.map((row) => row.length));
+
+  rows.forEach((row, y) => {
+    [...row].forEach((letter, x) => {
+      const dir = DIRECTION_VECTORS[letter];
+      if (!dir) return;
+
+      for (let i = 0; i < FOOTPRINT_LENGTH; i += 1) {
+        const cell = { x: x - dir.x * i, y: y - dir.y * i };
+        if (cell.x < 0 || cell.y < 0 || cell.x >= colCount || cell.y >= rowCount) {
+          issues.push({
+            type: "footprint",
+            from: { x, y, dir: CELL_TO_DIRECTION[letter] },
+            message: "A pig footprint extends outside the board.",
+          });
+          continue;
+        }
+
+        const key = `${cell.x},${cell.y}`;
+        if (occupied.has(key)) {
+          issues.push({
+            type: "overlap",
+            from: { x, y, dir: CELL_TO_DIRECTION[letter] },
+            to: occupied.get(key),
+            message: "Two pig footprints overlap.",
+          });
+        } else {
+          occupied.set(key, { x, y, dir: CELL_TO_DIRECTION[letter] });
+        }
+      }
+    });
+  });
 
   rows.forEach((row, y) => {
     const rightFacing = [];
@@ -113,7 +162,6 @@ function validateLevel(level) {
     }
   });
 
-  const colCount = Math.max(...rows.map((row) => row.length));
   for (let x = 0; x < colCount; x += 1) {
     const downFacing = [];
     for (let y = 0; y < rows.length; y += 1) {

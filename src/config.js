@@ -3,8 +3,8 @@ window.PigRun = window.PigRun || {};
 
 window.PigRun.config = {
   boardSize: {
-    cols: 8,
-    rows: 10,
+    cols: 9,
+    rows: 12,
   },
   directions: {
     up: { x: 0, y: -1 },
@@ -15,6 +15,7 @@ window.PigRun.config = {
   pigCollision: {
     laneHalfWidth: 0.56,
     laneDepth: 0.62,
+    footprintLength: 2,
   },
   performance: {
     maxPixelRatio: 1.5,
@@ -27,9 +28,9 @@ window.PigRun.config = {
     flip: 3,
   },
   pigSpritePaths: {
-    right: "./assets/pig-sprite.png?v=6",
-    up: "./assets/pig-up.png?v=6",
-    down: "./assets/pig-down.png?v=6",
+    right: "./assets/pig-sprite.png?v=7",
+    up: "./assets/pig-up.png?v=7",
+    down: "./assets/pig-down.png?v=7",
   },
 };
 })();

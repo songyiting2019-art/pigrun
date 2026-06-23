@@ -1,4 +1,5 @@
 const canvas = document.querySelector("#gameCanvas");
+const gameEl = document.querySelector(".game");
 const mainCtx = canvas.getContext("2d", { alpha: true, desynchronized: true });
 let ctx = mainCtx;
 const { config, assets, audio, levels } = window.PigRun;
@@ -26,6 +27,7 @@ const modalTextEl = document.querySelector("#modalText");
 const modalButtonEl = document.querySelector("#modalButton");
 const pauseButton = document.querySelector("#pauseButton");
 const soundButton = document.querySelector("#soundButton");
+const restartButton = document.querySelector("#restartButton");
 
 const tools = {
   remove: {
@@ -106,7 +108,13 @@ function resize() {
   renderBackgroundCache();
 }
 
-function buildLevel() {
+function buildLevel(options = {}) {
+  if (state.levelCompleteTimer) {
+    window.clearTimeout(state.levelCompleteTimer);
+  }
+  if (options.resetScore) {
+    state.score = 0;
+  }
   const level = getLevel(state.level - 1);
   state.pigs = parseLevelCells(level).map((cell) => ({
     id: `${level.id}-${cell.x}-${cell.y}-${Math.random().toString(16).slice(2)}`,
@@ -120,12 +128,17 @@ function buildLevel() {
     wobble: Math.random() * Math.PI * 2,
     runPhase: Math.random() * Math.PI * 2,
   }));
+  state.particles = [];
   state.combo = 0;
   state.levelCompleteTimer = 0;
   resetToolCounts();
   guideEl.classList.remove("hidden");
   overlayEl.classList.add("hidden");
   syncUi();
+}
+
+function restartLevel() {
+  buildLevel({ resetScore: true });
 }
 
 function resetToolCounts() {
@@ -304,10 +317,12 @@ function drawPig(pig, time) {
 
   const sprite = pig.dir === "up" ? pigSprites.up : pig.dir === "down" ? pigSprites.down : pigSprites.right;
   if (sprite.complete && sprite.naturalWidth > 0) {
-    const drawSize = board.cell * 1.58;
+    const side = pig.dir === "left" || pig.dir === "right";
+    const drawW = board.cell * (side ? 2.02 : 1.34);
+    const drawH = board.cell * (side ? 1.2 : 2.02);
     ctx.rotate(runWave * 0.035);
     ctx.scale((pig.dir === "left" ? -1 : 1) * (1 + runStep * 0.07), 1 - runStep * 0.055);
-    ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    ctx.drawImage(sprite, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
     if (pig.dizzyLife > 0) {
       drawOrbitingStars(pig, time, cx + dizzyWave, cy + bob);
@@ -477,7 +492,11 @@ function rounded(x, y, w, h, r) {
 }
 
 function pigAtCell(x, y, ignoredPig = null) {
-  return state.pigs.find((pig) => pig !== ignoredPig && !pig.exiting && pig.x === x && pig.y === y);
+  return state.pigs.find((pig) =>
+    pig !== ignoredPig &&
+    !pig.exiting &&
+    pigFootprintCells(pig).some((cell) => cell.x === x && cell.y === y),
+  );
 }
 
 function canvasPointFromClient(clientX, clientY) {
@@ -516,18 +535,18 @@ function pigTouchScore(pig, point) {
   const cy = board.y + (pig.py + 0.5) * board.cell;
   const dx = (point.x - cx) / board.cell;
   const dy = (point.y - cy) / board.cell;
-  const fingerRadius = Math.max(0.68, 26 / board.cell);
-  const centerScore = ellipseHitScore(dx, dy, 0, 0.02, fingerRadius, fingerRadius * 1.05);
+  const fingerRadius = Math.max(0.78, 30 / board.cell);
+  const centerScore = ellipseHitScore(dx, dy, 0, 0.02, fingerRadius, fingerRadius * 1.08);
 
   if (pig.dir === "left" || pig.dir === "right") {
-    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.03, 0.78, 0.48));
+    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.03, 1.03, 0.58));
   }
 
   if (pig.dir === "up") {
-    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.02, 0.5, 0.72));
+    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.02, 0.6, 1.03));
   }
 
-  return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.06, 0.52, 0.76));
+  return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.06, 0.62, 1.04));
 }
 
 function ellipseHitScore(dx, dy, cx, cy, rx, ry) {
@@ -542,31 +561,44 @@ function canExit(pig) {
 
 function tracePath(pig) {
   const dir = dirs[pig.dir];
-  let x = pig.x + dir.x;
-  let y = pig.y + dir.y;
-  let stopX = pig.x;
-  let stopY = pig.y;
-  while (x >= 0 && y >= 0 && x < board.cols && y < board.rows) {
-    const blocker = pigBlockingBodyAt(x, y, pig, dir);
-    if (blocker) {
-      return { canExit: false, stopX, stopY, hitX: blocker.x, hitY: blocker.y };
+  let x = pig.x;
+  let y = pig.y;
+  while (true) {
+    const nextX = x + dir.x;
+    const nextY = y + dir.y;
+    const nextCells = pigFootprintCells(pig, nextX, nextY);
+    if (!nextCells.length) {
+      return { canExit: true, stopX: x, stopY: y };
     }
-    stopX = x;
-    stopY = y;
-    x += dir.x;
-    y += dir.y;
+    const blocker = pigBlockingBodyAt(pig, nextX, nextY);
+    if (blocker) {
+      return { canExit: false, stopX: x, stopY: y, hitX: blocker.x, hitY: blocker.y };
+    }
+    x = nextX;
+    y = nextY;
   }
-  return { canExit: true, stopX, stopY };
 }
 
-function pigBlockingBodyAt(x, y, ignoredPig, dir) {
+function pigFootprintCells(pig, x = pig.x, y = pig.y, keepOutside = false) {
+  const dir = dirs[pig.dir];
+  const cells = [];
+  for (let i = 0; i < (pigCollision.footprintLength || 1); i += 1) {
+    const cell = { x: x - dir.x * i, y: y - dir.y * i };
+    if (keepOutside || (cell.x >= 0 && cell.y >= 0 && cell.x < board.cols && cell.y < board.rows)) {
+      cells.push(cell);
+    }
+  }
+  return cells;
+}
+
+function pigBlockingBodyAt(movingPig, x, y) {
+  const movingCells = pigFootprintCells(movingPig, x, y);
   return state.pigs.find((pig) => {
-    if (pig === ignoredPig || pig.exiting) return false;
-    const dx = pig.x - x;
-    const dy = pig.y - y;
-    const forwardOverlap = Math.abs(dx * dir.x + dy * dir.y);
-    const sideOverlap = Math.abs(dx * dir.y - dy * dir.x);
-    return forwardOverlap < pigCollision.laneDepth && sideOverlap < pigCollision.laneHalfWidth;
+    if (pig === movingPig || pig.exiting) return false;
+    const cells = pigFootprintCells(pig);
+    return movingCells.some((movingCell) =>
+      cells.some((cell) => cell.x === movingCell.x && cell.y === movingCell.y),
+    );
   });
 }
 
@@ -715,6 +747,11 @@ function useFlipTool() {
   if (tools.flip.count <= 0) return;
   tools.flip.count -= 1;
   state.pigs.filter((pig) => !pig.exiting).forEach((pig) => {
+    const oldDir = dirs[pig.dir];
+    pig.x -= oldDir.x * ((pigCollision.footprintLength || 1) - 1);
+    pig.y -= oldDir.y * ((pigCollision.footprintLength || 1) - 1);
+    pig.px = pig.x;
+    pig.py = pig.y;
     pig.dir = { up: "down", down: "up", left: "right", right: "left" }[pig.dir];
   });
   sound.tool();
@@ -767,17 +804,23 @@ function handleTapPoint(clientX, clientY) {
 }
 
 function handlePointerTap(event) {
+  if (isUiTap(event.target)) return;
   event.preventDefault();
   if (event.pointerType === "touch" && performance.now() - state.lastTouchHandledAt < 350) return;
   handleTapPoint(event.clientX, event.clientY);
 }
 
 function handleTouchStart(event) {
+  if (isUiTap(event.target)) return;
   event.preventDefault();
   const touch = event.changedTouches && event.changedTouches[0];
   if (!touch) return;
   state.lastTouchHandledAt = performance.now();
   handleTapPoint(touch.clientX, touch.clientY);
+}
+
+function isUiTap(target) {
+  return Boolean(target.closest("button"));
 }
 
 function chargeBlockedPig(pig) {
@@ -921,8 +964,8 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener("pointerdown", handlePointerTap, { passive: false });
-canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+gameEl.addEventListener("pointerdown", handlePointerTap, { passive: false });
+gameEl.addEventListener("touchstart", handleTouchStart, { passive: false });
 
 tools.remove.button.addEventListener("click", () => selectTool("remove"));
 tools.shuffle.button.addEventListener("click", useShuffleTool);
@@ -935,6 +978,8 @@ pauseButton.addEventListener("click", () => {
   modalButtonEl.textContent = state.paused ? "继续" : "知道了";
   overlayEl.classList.toggle("hidden", !state.paused);
 });
+
+restartButton.addEventListener("click", restartLevel);
 
 soundButton.addEventListener("click", () => {
   state.muted = !state.muted;
@@ -952,6 +997,11 @@ modalButtonEl.addEventListener("click", () => {
 });
 
 window.addEventListener("resize", resize);
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    restartLevel();
+  }
+});
 resize();
-buildLevel();
+buildLevel({ resetScore: true });
 requestAnimationFrame(loop);
