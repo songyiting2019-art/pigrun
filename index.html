@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小猪快跑</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="phone-shell">
+      <section class="game" aria-label="小猪快跑游戏">
+        <div class="topbar">
+          <button class="icon-button" id="pauseButton" type="button" aria-label="暂停">
+            <span></span>
+            <span></span>
+          </button>
+          <div class="score-pill">
+            <span class="leaf"></span>
+            <strong id="score">0</strong>
+          </div>
+          <div class="level">第 <strong id="level">1</strong> 关</div>
+          <button class="sound-button" id="soundButton" type="button" aria-label="音效">♪</button>
+        </div>
+
+        <div class="combo" id="combo">连击 x 1</div>
+        <canvas id="gameCanvas" width="420" height="720" aria-label="游戏棋盘"></canvas>
+        <div class="guide" id="guide">点击小猪向前移动</div>
+        <div class="toast" id="toast">前方被挡住啦</div>
+
+        <div class="tools" aria-label="道具">
+          <button class="tool" id="removeTool" type="button">
+            <span class="tool-icon remove"></span>
+            <span>移除</span>
+            <b id="removeCount">3</b>
+          </button>
+          <button class="tool" id="shuffleTool" type="button">
+            <span class="tool-icon shuffle"></span>
+            <span>洗牌</span>
+            <b id="shuffleCount">3</b>
+          </button>
+          <button class="tool" id="flipTool" type="button">
+            <span class="tool-icon flip"></span>
+            <span>翻转</span>
+            <b id="flipCount">3</b>
+          </button>
+        </div>
+
+        <div class="overlay hidden" id="overlay">
+          <div class="modal">
+            <h1 id="modalTitle">过关啦</h1>
+            <p id="modalText">小猪已经全部回家。</p>
+            <button id="modalButton" type="button">下一关</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="./src/config.js?v=3"></script>
+    <script src="./src/levels.js?v=3"></script>
+    <script src="./src/assets.js?v=3"></script>
+    <script src="./src/audio.js?v=3"></script>
+    <script src="./game.js?v=3"></script>
+  </body>
+</html>
