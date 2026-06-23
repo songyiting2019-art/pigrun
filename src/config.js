@@ -27,9 +27,9 @@ window.PigRun.config = {
     flip: 3,
   },
   pigSpritePaths: {
-    right: "./assets/pig-sprite.png?v=5",
-    up: "./assets/pig-up.png?v=5",
-    down: "./assets/pig-down.png?v=5",
+    right: "./assets/pig-sprite.png?v=6",
+    up: "./assets/pig-up.png?v=6",
+    down: "./assets/pig-down.png?v=6",
   },
 };
 })();

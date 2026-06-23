@@ -65,6 +65,7 @@ const state = {
   paused: false,
   muted: false,
   lastTime: performance.now(),
+  lastTouchHandledAt: 0,
   toastTimer: 0,
   levelCompleteTimer: 0,
 };
@@ -479,31 +480,60 @@ function pigAtCell(x, y, ignoredPig = null) {
   return state.pigs.find((pig) => pig !== ignoredPig && !pig.exiting && pig.x === x && pig.y === y);
 }
 
-function pigAtPoint(clientX, clientY) {
+function canvasPointFromClient(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const localX = clientX - rect.left;
-  const localY = clientY - rect.top;
-  const x = Math.floor((localX - board.x) / board.cell);
-  const y = Math.floor((localY - board.y) / board.cell);
-  const cellPig = x >= 0 && y >= 0 && x < board.cols && y < board.rows ? pigAtCell(x, y) : null;
-  if (cellPig) return cellPig;
+  return {
+    x: clientX - rect.left,
+    y: clientY - rect.top,
+  };
+}
 
+function pigAtPoint(clientX, clientY) {
+  const point = canvasPointFromClient(clientX, clientY);
   const hits = [];
   state.pigs.forEach((pig) => {
     if (pig.exiting || pig.remove) return;
-    const cx = board.x + (pig.px + 0.5) * board.cell;
-    const cy = board.y + (pig.py + 0.5) * board.cell;
-    const dx = localX - cx;
-    const dy = localY - cy;
-    const hitX = board.cell * 0.5;
-    const hitY = board.cell * 0.52;
-    const normalized = (dx * dx) / (hitX * hitX) + (dy * dy) / (hitY * hitY);
-    if (normalized <= 1) {
-      hits.push({ pig, normalized });
+    const score = pigTouchScore(pig, point);
+    if (score <= 1) {
+      hits.push({ pig, score });
     }
   });
-  if (hits.length !== 1) return null;
-  return hits[0].pig;
+  if (!hits.length) return null;
+
+  hits.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    return b.pig.py - a.pig.py;
+  });
+
+  const best = hits[0];
+  const runnerUp = hits[1];
+  if (runnerUp && runnerUp.score - best.score < 0.035) return null;
+  return best.pig;
+}
+
+function pigTouchScore(pig, point) {
+  const cx = board.x + (pig.px + 0.5) * board.cell;
+  const cy = board.y + (pig.py + 0.5) * board.cell;
+  const dx = (point.x - cx) / board.cell;
+  const dy = (point.y - cy) / board.cell;
+  const fingerRadius = Math.max(0.68, 26 / board.cell);
+  const centerScore = ellipseHitScore(dx, dy, 0, 0.02, fingerRadius, fingerRadius * 1.05);
+
+  if (pig.dir === "left" || pig.dir === "right") {
+    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.03, 0.78, 0.48));
+  }
+
+  if (pig.dir === "up") {
+    return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.02, 0.5, 0.72));
+  }
+
+  return Math.min(centerScore, ellipseHitScore(dx, dy, 0, 0.06, 0.52, 0.76));
+}
+
+function ellipseHitScore(dx, dy, cx, cy, rx, ry) {
+  const nx = (dx - cx) / rx;
+  const ny = (dy - cy) / ry;
+  return nx * nx + ny * ny;
 }
 
 function canExit(pig) {
@@ -715,11 +745,10 @@ function selectTool(name) {
   tools[name].button.classList.add("active");
 }
 
-function handleTap(event) {
-  event.preventDefault();
+function handleTapPoint(clientX, clientY) {
   if (state.paused || !overlayEl.classList.contains("hidden")) return;
   guideEl.classList.add("hidden");
-  const pig = pigAtPoint(event.clientX, event.clientY);
+  const pig = pigAtPoint(clientX, clientY);
   if (state.activeTool === "remove") {
     useRemoveTool(pig);
     return;
@@ -735,6 +764,20 @@ function handleTap(event) {
     state.combo = 0;
     chargeBlockedPig(pig);
   }
+}
+
+function handlePointerTap(event) {
+  event.preventDefault();
+  if (event.pointerType === "touch" && performance.now() - state.lastTouchHandledAt < 350) return;
+  handleTapPoint(event.clientX, event.clientY);
+}
+
+function handleTouchStart(event) {
+  event.preventDefault();
+  const touch = event.changedTouches && event.changedTouches[0];
+  if (!touch) return;
+  state.lastTouchHandledAt = performance.now();
+  handleTapPoint(touch.clientX, touch.clientY);
 }
 
 function chargeBlockedPig(pig) {
@@ -878,7 +921,8 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener("pointerdown", handleTap, { passive: false });
+canvas.addEventListener("pointerdown", handlePointerTap, { passive: false });
+canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
 
 tools.remove.button.addEventListener("click", () => selectTool("remove"));
 tools.shuffle.button.addEventListener("click", useShuffleTool);
