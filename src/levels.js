@@ -20,48 +20,48 @@ const LEVELS = [
     id: "level-1",
     name: "第 1 关",
     rows: [
-      "rdu..urr",
-      "ldu..ldd",
-      "ur..ddrr",
-      "rduul...",
-      "ll..rrdd",
-      "uurr..rr",
-      "dd..uurr",
-      "...rddl.",
-      "rruulldd",
-      "l..u..dr",
+      "rdd..drr",
+      "rdd..rdd",
+      "dr..ddrr",
+      "rdddr...",
+      "rr..rrdd",
+      "ddrr..rr",
+      "dd..ddrr",
+      "...rddr.",
+      "rrddrrdd",
+      "r..d..dr",
     ],
   },
   {
     id: "level-2",
     name: "第 2 关",
     rows: [
-      "rrddlluu",
-      "u..r..dl",
-      "ddrruull",
-      "lrrrddlu",
-      "..llrr..",
-      "rduulldr",
-      "llrruudd",
-      "d..l..rr",
-      "rurrddll",
-      "ldrurrdr",
+      "rrddrrdd",
+      "d..r..dr",
+      "ddrrddrr",
+      "rrrrddrd",
+      "..rrrr..",
+      "rdddrrdr",
+      "rrrrdddd",
+      "d..r..rr",
+      "rdrrddrr",
+      "rdrdrrdr",
     ],
   },
   {
     id: "level-3",
     name: "第 3 关",
     rows: [
-      "druldrul",
-      "r..d..lu",
-      "uurrrudd",
-      "ddlurrrr",
-      "rr..ul..",
-      "uullddrr",
-      "ldrrrrud",
-      "d..u..rr",
-      "rrddlluu",
-      "uldruldr",
+      "drdrdrdr",
+      "r..d..rd",
+      "ddrrrddd",
+      "ddrdrrrr",
+      "rr..dr..",
+      "ddrrddrr",
+      "rdrrrrdd",
+      "d..d..rr",
+      "rrddrrdd",
+      "drdrdrdr",
     ],
   },
 ];
@@ -94,41 +94,42 @@ function validateLevel(level) {
   const issues = [];
 
   rows.forEach((row, y) => {
+    const rightFacing = [];
     for (let x = 0; x < row.length; x += 1) {
-      if (row[x] !== "r") continue;
-      for (let tx = x + 1; tx < row.length; tx += 1) {
-        if (row[tx] === ".") continue;
-        if (row[tx] === "l") {
+      if (row[x] === "r") {
+        rightFacing.push(x);
+      }
+      if (row[x] === "l") {
+        rightFacing.forEach((rx) => {
           issues.push({
             type: "faceoff",
             axis: "horizontal",
-            from: { x, y, dir: "right" },
-            to: { x: tx, y, dir: "left" },
-            message: "Two pigs face each other on a clear horizontal lane.",
+            from: { x: rx, y, dir: "right" },
+            to: { x, y, dir: "left" },
+            message: "Two pigs face each other on the same horizontal lane.",
           });
-        }
-        break;
+        });
       }
     }
   });
 
   const colCount = Math.max(...rows.map((row) => row.length));
   for (let x = 0; x < colCount; x += 1) {
+    const downFacing = [];
     for (let y = 0; y < rows.length; y += 1) {
-      if (rows[y][x] !== "d") continue;
-      for (let ty = y + 1; ty < rows.length; ty += 1) {
-        const cell = rows[ty][x];
-        if (cell === ".") continue;
-        if (cell === "u") {
+      if (rows[y][x] === "d") {
+        downFacing.push(y);
+      }
+      if (rows[y][x] === "u") {
+        downFacing.forEach((dy) => {
           issues.push({
             type: "faceoff",
             axis: "vertical",
-            from: { x, y, dir: "down" },
-            to: { x, y: ty, dir: "up" },
-            message: "Two pigs face each other on a clear vertical lane.",
+            from: { x, y: dy, dir: "down" },
+            to: { x, y, dir: "up" },
+            message: "Two pigs face each other on the same vertical lane.",
           });
-        }
-        break;
+        });
       }
     }
   }
