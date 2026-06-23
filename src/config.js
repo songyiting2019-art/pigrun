@@ -16,15 +16,20 @@ window.PigRun.config = {
     laneHalfWidth: 0.56,
     laneDepth: 0.62,
   },
+  performance: {
+    maxPixelRatio: 1.5,
+    targetFps: 30,
+    maxParticles: 90,
+  },
   toolDefaults: {
     remove: 3,
     shuffle: 3,
     flip: 3,
   },
   pigSpritePaths: {
-    right: "./assets/pig-sprite.png",
-    up: "./assets/pig-up.png",
-    down: "./assets/pig-down.png",
+    right: "./assets/pig-sprite.png?v=5",
+    up: "./assets/pig-up.png?v=5",
+    down: "./assets/pig-down.png?v=5",
   },
 };
 })();

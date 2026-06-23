@@ -1,9 +1,19 @@
 const canvas = document.querySelector("#gameCanvas");
-const ctx = canvas.getContext("2d");
+const mainCtx = canvas.getContext("2d", { alpha: true, desynchronized: true });
+let ctx = mainCtx;
 const { config, assets, audio, levels } = window.PigRun;
-const { boardSize, directions: dirs, pigCollision, pigSpritePaths, toolDefaults } = config;
+const {
+  boardSize,
+  directions: dirs,
+  pigCollision,
+  pigSpritePaths,
+  performance: perfConfig,
+  toolDefaults,
+} = config;
 const { getLevel, parseLevelCells, serializeLevelCells, validateLevel } = levels;
 const pigSprites = assets.createImageMap(pigSpritePaths);
+const backgroundCanvas = document.createElement("canvas");
+const backgroundCtx = backgroundCanvas.getContext("2d", { alpha: true });
 
 const scoreEl = document.querySelector("#score");
 const levelEl = document.querySelector("#level");
@@ -59,14 +69,29 @@ const state = {
   levelCompleteTimer: 0,
 };
 
+const render = {
+  ratio: 1,
+  frameInterval: 1000 / (perfConfig.targetFps || 30),
+  maxParticles: perfConfig.maxParticles || 90,
+};
+
 const sound = audio.createSoundManager(() => state.muted);
 
 function resize() {
-  const ratio = window.devicePixelRatio || 1;
+  const ratio = Math.min(window.devicePixelRatio || 1, perfConfig.maxPixelRatio || 1.5);
   const rect = canvas.getBoundingClientRect();
+  render.ratio = ratio;
   canvas.width = Math.floor(rect.width * ratio);
   canvas.height = Math.floor(rect.height * ratio);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  mainCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  mainCtx.imageSmoothingEnabled = true;
+  mainCtx.imageSmoothingQuality = "medium";
+
+  backgroundCanvas.width = canvas.width;
+  backgroundCanvas.height = canvas.height;
+  backgroundCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  backgroundCtx.imageSmoothingEnabled = true;
+  backgroundCtx.imageSmoothingQuality = "medium";
 
   const playW = Math.min(rect.width - 54, 350);
   const top = rect.height < 720 ? 142 : 182;
@@ -77,6 +102,7 @@ function resize() {
   board.h = board.cell * board.rows;
   board.x = (rect.width - board.w) / 2;
   board.y = top + (availableH - board.h) / 2;
+  renderBackgroundCache();
 }
 
 function buildLevel() {
@@ -118,11 +144,28 @@ function syncUi() {
 }
 
 function drawScene(time) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawFarm();
-  drawBoard();
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  ctx.drawImage(backgroundCanvas, 0, 0, canvas.clientWidth, canvas.clientHeight);
   [...state.pigs].sort((a, b) => a.py - b.py).forEach((pig) => drawPig(pig, time));
   drawParticles();
+}
+
+function renderBackgroundCache() {
+  withRenderContext(backgroundCtx, () => {
+    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    drawFarm();
+    drawBoard();
+  });
+}
+
+function withRenderContext(nextCtx, draw) {
+  const previousCtx = ctx;
+  ctx = nextCtx;
+  try {
+    draw();
+  } finally {
+    ctx = previousCtx;
+  }
 }
 
 function drawFarm() {
@@ -263,8 +306,6 @@ function drawPig(pig, time) {
     const drawSize = board.cell * 1.58;
     ctx.rotate(runWave * 0.035);
     ctx.scale((pig.dir === "left" ? -1 : 1) * (1 + runStep * 0.07), 1 - runStep * 0.055);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
     ctx.restore();
     if (pig.dizzyLife > 0) {
@@ -273,10 +314,104 @@ function drawPig(pig, time) {
     return;
   }
 
+  ctx.rotate(runWave * 0.035);
+  ctx.scale(pig.dir === "left" ? -1 : 1, 1);
+  drawFallbackPig(pig, runStep);
   ctx.restore();
   if (pig.dizzyLife > 0) {
     drawOrbitingStars(pig, time, cx + dizzyWave, cy + bob);
   }
+}
+
+function drawFallbackPig(pig, runStep) {
+  const size = board.cell;
+  const side = pig.dir === "left" || pig.dir === "right";
+  const back = pig.dir === "up";
+
+  ctx.fillStyle = "#f7a1ac";
+  ctx.strokeStyle = "#d8707d";
+  ctx.lineWidth = Math.max(1, size * 0.035);
+
+  ctx.beginPath();
+  ctx.ellipse(0, size * 0.02, size * (side ? 0.45 : 0.39), size * (side ? 0.32 : 0.43), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  if (side) {
+    ctx.beginPath();
+    ctx.ellipse(size * 0.32, -size * 0.02, size * 0.22, size * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    drawFallbackEar(size * 0.24, -size * 0.2, size);
+    drawFallbackEar(size * 0.39, -size * 0.16, size);
+    drawFallbackSnout(size * 0.48, size * 0.02, size);
+    drawFallbackEye(size * 0.34, -size * 0.06, size);
+    drawFallbackTail(-size * 0.42, -size * 0.03, size);
+  } else if (back) {
+    drawFallbackEar(-size * 0.2, -size * 0.24, size);
+    drawFallbackEar(size * 0.2, -size * 0.24, size);
+    drawFallbackTail(size * 0.29, size * 0.02, size);
+  } else {
+    drawFallbackEar(-size * 0.22, -size * 0.23, size);
+    drawFallbackEar(size * 0.22, -size * 0.23, size);
+    drawFallbackSnout(0, size * 0.1, size);
+    drawFallbackEye(-size * 0.15, -size * 0.04, size);
+    drawFallbackEye(size * 0.15, -size * 0.04, size);
+  }
+
+  drawFallbackLegs(size, runStep);
+}
+
+function drawFallbackEar(x, y, size) {
+  ctx.fillStyle = "#f58c9a";
+  ctx.beginPath();
+  ctx.moveTo(x, y - size * 0.08);
+  ctx.lineTo(x - size * 0.08, y + size * 0.08);
+  ctx.lineTo(x + size * 0.08, y + size * 0.08);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#f7a1ac";
+}
+
+function drawFallbackSnout(x, y, size) {
+  ctx.fillStyle = "#f48d9a";
+  ctx.beginPath();
+  ctx.ellipse(x, y, size * 0.13, size * 0.09, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#7b4a50";
+  ctx.beginPath();
+  ctx.arc(x - size * 0.04, y, size * 0.014, 0, Math.PI * 2);
+  ctx.arc(x + size * 0.04, y, size * 0.014, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f7a1ac";
+}
+
+function drawFallbackEye(x, y, size) {
+  ctx.fillStyle = "#49333a";
+  ctx.beginPath();
+  ctx.arc(x, y, size * 0.028, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f7a1ac";
+}
+
+function drawFallbackTail(x, y, size) {
+  ctx.strokeStyle = "#d8707d";
+  ctx.lineWidth = Math.max(1, size * 0.035);
+  ctx.beginPath();
+  ctx.arc(x, y, size * 0.07, 0.2, Math.PI * 1.7);
+  ctx.stroke();
+}
+
+function drawFallbackLegs(size, runStep) {
+  ctx.fillStyle = "#e7828e";
+  const lift = runStep * size * 0.04;
+  [[-0.22, 0.31 + lift / size], [0.22, 0.31 - lift / size]].forEach(([x, y]) => {
+    ctx.beginPath();
+    ctx.ellipse(size * x, size * y, size * 0.07, size * 0.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawOrbitingStars(pig, time, cx, cy) {
@@ -346,10 +481,29 @@ function pigAtCell(x, y, ignoredPig = null) {
 
 function pigAtPoint(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const x = Math.floor((clientX - rect.left - board.x) / board.cell);
-  const y = Math.floor((clientY - rect.top - board.y) / board.cell);
-  if (x < 0 || y < 0 || x >= board.cols || y >= board.rows) return null;
-  return pigAtCell(x, y);
+  const localX = clientX - rect.left;
+  const localY = clientY - rect.top;
+  const x = Math.floor((localX - board.x) / board.cell);
+  const y = Math.floor((localY - board.y) / board.cell);
+  const cellPig = x >= 0 && y >= 0 && x < board.cols && y < board.rows ? pigAtCell(x, y) : null;
+  if (cellPig) return cellPig;
+
+  const hits = [];
+  state.pigs.forEach((pig) => {
+    if (pig.exiting || pig.remove) return;
+    const cx = board.x + (pig.px + 0.5) * board.cell;
+    const cy = board.y + (pig.py + 0.5) * board.cell;
+    const dx = localX - cx;
+    const dy = localY - cy;
+    const hitX = board.cell * 0.5;
+    const hitY = board.cell * 0.52;
+    const normalized = (dx * dx) / (hitX * hitX) + (dy * dy) / (hitY * hitY);
+    if (normalized <= 1) {
+      hits.push({ pig, normalized });
+    }
+  });
+  if (hits.length !== 1) return null;
+  return hits[0].pig;
 }
 
 function canExit(pig) {
@@ -419,14 +573,14 @@ function getOffscreenTarget(pig) {
 }
 
 function makeDust(pig) {
-  makeDustAt(pig.px, pig.py, 14);
+  makeDustAt(pig.px, pig.py, 10);
 }
 
 function makeDustAt(gridX, gridY, count = 8) {
   const cx = board.x + (gridX + 0.5) * board.cell;
   const cy = board.y + (gridY + 0.5) * board.cell;
   for (let i = 0; i < count; i += 1) {
-    state.particles.push({
+    addParticle({
       x: cx + (Math.random() - 0.5) * board.cell * 0.42,
       y: cy + (Math.random() - 0.5) * board.cell * 0.42,
       vx: (Math.random() - 0.5) * 1.9,
@@ -443,7 +597,7 @@ function makeRunDust(pig, count = 4) {
   const cx = board.x + (pig.px + 0.5 - dir.x * 0.34) * board.cell;
   const cy = board.y + (pig.py + 0.5 - dir.y * 0.34) * board.cell;
   for (let i = 0; i < count; i += 1) {
-    state.particles.push({
+    addParticle({
       x: cx + (Math.random() - 0.5) * board.cell * 0.5,
       y: cy + (Math.random() - 0.5) * board.cell * 0.35,
       vx: -dir.x * (0.8 + Math.random() * 0.9) + (Math.random() - 0.5) * 0.7,
@@ -452,6 +606,13 @@ function makeRunDust(pig, count = 4) {
       size: 2.4 + Math.random() * 3.4,
       color: Math.random() > 0.28 ? "#fff8e0" : "#dce9bc",
     });
+  }
+}
+
+function addParticle(particle) {
+  state.particles.push(particle);
+  if (state.particles.length > render.maxParticles) {
+    state.particles.splice(0, state.particles.length - render.maxParticles);
   }
 }
 
@@ -555,6 +716,7 @@ function selectTool(name) {
 }
 
 function handleTap(event) {
+  event.preventDefault();
   if (state.paused || !overlayEl.classList.contains("hidden")) return;
   guideEl.classList.add("hidden");
   const pig = pigAtPoint(event.clientX, event.clientY);
@@ -704,14 +866,19 @@ function checkComplete() {
 }
 
 function loop(now) {
-  const dt = Math.min(48, now - state.lastTime);
+  const elapsed = now - state.lastTime;
+  if (elapsed < render.frameInterval) {
+    requestAnimationFrame(loop);
+    return;
+  }
+  const dt = Math.min(64, elapsed);
   state.lastTime = now;
   update(dt);
   drawScene(now);
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener("pointerdown", handleTap);
+canvas.addEventListener("pointerdown", handleTap, { passive: false });
 
 tools.remove.button.addEventListener("click", () => selectTool("remove"));
 tools.shuffle.button.addEventListener("click", useShuffleTool);
